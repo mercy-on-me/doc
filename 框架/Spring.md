@@ -1,0 +1,325 @@
+# Spring
+## 简介
+
+## 1. IOC 控制反转
+### 1. IOC 概述
+- IOC : 将对象创建的权利反转给 Spring框架,由 Spring 框架控制对象的创建.也就是 : 将类交给 Spring 管理
+- IOC 的实现
+    - 工厂 + 配置文件 + 反射
+    - 配置文件 : 指定需要交给 Spring 管理的类
+    - 工厂 : 通过读取配置文件,获取到类的 class
+    - 反射 : 工厂获取到 class 后,通过反射创建对象
+
+### 2. 演示
+#### 2.1 配置文件方式
+==配置 Bean==
+
+```xml
+<!--
+    id: 当前 Bean 的唯一标识,通过 ID 获取 Bean
+    class: 当前 Bean 的全路径
+    scope: 对象的作用范围
+        singleton : 单例,作用范围是整个应用.应用加载,创建容器的时候对象被创建,只要对象存在,就一直存活,应用被卸载的时候,对象被销毁
+        prototype : 多例,每次访问对象都会创建.  使用对象的时候就创建,只要对象在使用中,就一直存活,长时间不用此对象,被 java垃圾回收机制回收
+    init-method: 初始化方法.对象创建出来后,马上执行初始化方法
+    destroy-method: 销毁方法
+-->
+<bean id="userService" class="com.cy.service.impl.UserServiceImpl" scope=""  init-method="initBean()" destroy-method=""/>
+```
+==service 正常编写==
+==测试类==
+
+```java
+public class IOCTest{
+    @Test
+    public void run(){
+        //获取 ApplicationContext 对象,这个对象加载到配置文件,就会将配置文件中的 Bean 创建
+        ApplicationContext ac = new AplicationContext("spring.xml");
+        //获取对象
+        UserService userService = (UserService)ac.getBean("userService");
+    }
+}
+```
+#### 2.2 注解方式
+- 实现方式: 
+    - 开启包扫描
+    - 将类交给 Spring 管理.@Service 等注解
+    - 如果使用配置类的话.参考 [注解](#zhujie)
+
+
+### 3. DI 依赖注入
+- 依赖注入
+    - 依赖注入是 IOC 的实现方式,就是想将交给 Spring 管理的 Bean 注入
+- DI 的两种方式:
+    - 构造方法注入
+    - set 方法注入
+#### 3.1 构造方法注入
+- 实现方式:  
+    - Bean 创建构造方法,需要注入哪些属性就在构造方法中添加哪些属性
+    - 配置文件中这个 Bean 的是,添加 Bean 的子标签 : constructor-arg,指定属性的名称
+    - 测试中正常通过context 获取
+- 演示
+
+```xml
+<bean id="位置标识" class="类全路径">
+    <constructor-arg name="类的属性" value="属性的值"/>
+    ...
+</bean>
+```
+
+#### 3.2 set 方法注入
+- 实现方式
+    - 为属性提供 set 方法
+    - 配置文件中为 Bean 添加子标签 property,此标签有属性 namem,value(还有 ref)
+- 演示
+
+```xml
+<bean id="位置标识" class="类全路径">
+    <property name="类的属性" value="属性的值"/>
+    <property name="类中有属性是对象,这个对象也叫给了 Spring 管理" ref="配置文件中已经配置的对应 Bean 的 ID"/>
+    ...
+</bean>
+```
+
+
+    
+## AOP
+### 1. AOP 概述
+- 通过动态代理.将横向的功能抽取出来,然后在使用的地方插入这些功能.
+- 动态代理实现,两种方式: Proxy ,CGLib
+
+```java
+//Proxy 方式,只能对接口使用
+//生成代理对象,并调用方法时,增强方法就执行了
+public class MyProxy {
+	 //动态代理实现, us要被增强的对象.必须要 final 修饰
+    public static UserService getProxy(final UserService us){
+        //生成代理
+        Object proxyInstance = Proxy.newProxyInstance(us.getClass().getClassLoader(), us.getClass().getInterfaces(), new InvocationHandler() {
+            //proxy : 代理对象,不要使用,否则就递归了
+            //method : 标识被代理对象的方法.
+            //args : 参数
+            @Override
+            public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                System.out.println("增强了...前");
+                //这里指在代理对象调用方法是,会自动执行被代理对象的方法.
+                Object invoke = method.invoke(us, args);
+                System.out.println("增强了...后");
+                return invoke;
+            }
+        });
+        return (UserService)proxyInstance;
+    }
+
+
+    public static void main(String[] args) {
+        UserService userService = new UserServiceImpl();
+        UserService proxy = MyProxy.getProxy(userService);
+        proxy.save();
+        System.out.println("=================");
+        proxy.update();
+    }
+}
+
+
+
+//CGLib方式
+
+```
+
+### 2. AOP 术语
+
+```properties
+joinpoint : 连接点,
+pointCut : 切入点.
+Advice : 通知.具体的增强
+    5种通知类型: 
+        Before : 前置通知,目标方法调用前执行
+        After : 后置通知,目标方法调用后执行
+        After-retuning : 返回通知,目标方法执行成功后执行
+        After-throwing : 异常通知,目标方法抛出异常后执行
+        Around : 环绕通知,合并了 Before 和 After
+introduction : 引介
+target : 代理的目标.就是要增强的对象
+Proxy : 代理.被 AOP 织入后,产生的接口代理对象
+weaving : 织入.一个动态的过程,把增强应用到目标对象来创建新的代理对象的过程
+aspect : 切面.切入点+通知
+```
+
+### 3. AOP实现
+#### 3.1 配置文件方式
+
+```xml
+<!--开启aop 配置-->
+<aop:config>
+    <!--配置切面-->
+    <aop:aspect ref="">
+        <!--配置通知和切入点-->
+        <aop:before method="" pointcut=""/>
+    </aop:aspect>
+</aop:config>
+```
+
+#### 3.2 注解方式
+- 开启包扫描
+- 开启Spring 对AOP 注解的支持
+- 声明切面类,并交给 Spring 管理,编写通知方法
+
+==配置文件==
+```xml
+<!--开启宝扫描-->
+<context:component-scan base-package=""/>
+<!--
+    开启 Spring 对 AOP 注解的支持
+    有属性: proxy-target-class : 配置代理方式
+        true: 默认为 jdk
+        false : cglib
+-->
+<aop:aspectj-autoproxy/>
+```
+
+==切面类==
+
+```java
+@Component
+@Aspect
+public class MyAspect{
+    
+    //通知方法
+    //@Before : 前置通知,属性 value 指定切入点
+    @Before(value="execution(* com.cy.*.save())")
+    public void beforeAdvice(){
+        ...增强代码
+    }
+}
+```
+
+
+#### 3.2 切入点表达式
+
+```properties
+* execution:匹配方法的执行
+    * 语法
+        * execution({修饰符} 返回值类型 包名.类名.方法名(参数))
+    * 写法说明:
+        * 修饰符:如果修饰符是:public,则可省略
+        * 返回值类型:方法的返回值类型,如果和要增强的方法的返回值不同,那么会因为找不到匹配的方法而使这个配置不起作用,但是不会报错
+            * 返回值类型可用星号(*),表示任意返回类型
+        * 包名:也可以用星号(*)表示,表示任意包
+            * 但是有几级包就要用几个星号
+            * com.cy.demo.Demo:*.*.*.Demo
+
+```
+-----
+### 事物管理
+#### 1. 概述
+- 使用 Spring 管理事务,要用到的核心接口:
+
+```properties
+PlatFromTransactionManager : Spring 平台事务管理器
+    提供了两个实现类 :
+        DataSourceTransactionManager:使用jdbc或者iBati运行持久化数据库时使用,在配置文件中配置bean
+        HibernateTransactionManager:使用hibernate进行持久化时使用,在配置文件中配置bean
+
+TransactionDefinition : 事务的定义信息对象
+    getName:获取事务对象名称
+    getIsolationLevel:获取事务隔离级别
+    getPropagationBehavior:获取事务传播行为
+    getTimeout:获取事务超时时间,默认值是-1,标识没有超时限制,如果有,以秒为单位进行设置
+        如果运行时间超过设置的时间,这个方法没有执行完, 并且后边还涉及到对数据库的增删改查时,事务会回滚,如果时间超过设置时间,方法没有执行完,但是后边没有涉及到对数据库的增删改查,那么事务不会回滚
+    isReadOnly:获取事务是否只读,一般查询时设置为只读
+
+```
+
+#### 2. 实现
+#### 2.1 注解方式
+- 开启扫描包
+- 配置平台事务管理器的 Bean
+- 开启对事务注解的支持
+- 配置 jdbctemplate bean
+- 在类或方法上使用注解: @Transactional,说明此类或者方法进行事务管理
+
+==实现==
+
+```xml
+<!--开启扫描包-->
+<context:component-scan base-package=""/>
+<!--开启对事务注解的支持-->
+<tx:annotation-driven transaction-manager="平台事务管理器 BeanID"/>
+<!--使用 Spring 默认方式加载 JDBC 配置文件-->
+<context:property-placeholder location="classpath:jdbc 配置文件"/>
+<bean 配置数据源>
+<bean id="平台事务管理器 BeanID" class="平台事务管理器类全路径">
+    <property name="数据源 ID" ref="数据源 ID"/>
+</bean>
+```
+==service层实现类==
+
+```java
+@Service
+@Transactional(isolation=Isolation.DEFAULT) //也可以加在类上
+public class UserServiceImpl implements UserService{
+    ....业务代码
+}
+```
+
+-----
+## 注解
+<span id="zhujie"/>
+
+```properties
+@Configuration : 标注在类上.说明这个类是个配置类
+@PropertySource : 标注在类上.用于指定配置文件路径,加载配置.通常和@Configuration 一起使用.
+@Import : 标注在类上.用于引入其他配置类.通常和@Configuration一起使用
+@ComponentScan : 标注在类上.指定扫描包,属性 basePackage:指定包路径.通常和 @Configuration 一起使用,用于纯注解方式.
+
+@Component : 标注在类上.将类交给 Spring 管理,属性 : value,指定 Bean 的 ID,不指定的话默认 ID 为类名,首字母小写
+@Controller : 标注在类上.也是将类交给 Spring 管理,用于表现层.属性 : value,指定 Bean 的 ID,不指定的话默认 ID 为类名,首字母小写
+@Service :  标注在实现类上.也是将类交给 Spring 管理,用于业务层.属性 : value,指定 Bean 的 ID,不指定的话默认 ID 为类名,首字母小写
+@Repository : 标注在实现类上.也是将类交给 Spring 管理,用于持久层.属性 : value,指定 Bean 的 ID,不指定的话默认 ID 为类名,首字母小写
+@Scope : 标注在类上.表明这个 Bean 的作用范围(多例,单例..)
+@Value : 标注在属性上. 用于注入基本类型和 String 类型数据
+
+@AutoWired : 自动按照类型注入.当接收只有一个实现时,会自动将实现注入,和 Bean ID 没有关系,当有多个时,需要指定 BeanID
+@Qualifier : 在@AutoWired 的基础上,按照bean ID 注入
+@Resource : 注解按照 Bean ID注入,属性:name,bean 的 ID 
+
+@Bean : 标注在方法上. 将此方法的返回值交给 Spring 管理,属性 name : 指定 BeanID.默认的 BeanID 为方法名.
+
+@ContextConfiguration : 标注在类上,用于加载配置文件.有属性 locations="classpath:xxxxx.xml"
+
+@Transactional(isolation=Isolation.DEFAULT) : 标注在类上或者方法上,说明此类或方法开启事务管理
+
+@Aspect : 标注在类上,说明此类是个切面类
+    @Before : 标注在方法上,说明此方法为前置通知
+    @After : 标注在方法上,说明此方法为后置通知
+    @After-retruning : 标注在方法上,说明此方法是在目标方法执行成功后通知
+    @After-throwing : 标注在方法上,说明此方法在目标方法抛出异常后通知
+    @Around : 标注在方法上,说明此方法为环绕通知.@Around 标注的通知方法需要有参数 final ProceedingJoinPoint p; p.proceed标识执行切入点方法
+    都有属性: value="切入点表达式"
+    
+    
+@within(注解类型) : 一般作用在方法上,匹配具有指定类型注解的方法.比如切面: @Before("@within(org.springframework.stereotype.Controller)"):标识所有具有@Controller 的方法被执行时都会执行通知方法
+```
+
+## 配置
+
+```xml
+<!--开启扫描包-->
+<context:component-scan base-package=""/>
+<!--开启对事务注解的支持-->
+<tx:annotation-driven transaction-manager="平台事务管理器 BeanID"/>
+<!--使用 Spring 默认方式加载 JDBC 配置文件-->
+<context:property-placeholder location="classpath:jdbc 配置文件"/>
+<!--主配置文件可通过下边的方法引入其他配置文件-->
+<import resource="配置文件路径">
+```
+
+## 其他知识点
+### 使用到的设计模式
+- 工厂模式
+    - 在控制反转中使用了工厂模式
+
+    
+- 代理模式
+    - AOP 切面编程.使用了动态代理
