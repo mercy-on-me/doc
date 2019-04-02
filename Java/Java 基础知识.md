@@ -27,3 +27,83 @@
 class.getClassLoader.getResourceAsStream("") : 默认从类路径下获取资源,path不能以 / 开头.
 Class.getResourceAsStream(path) : path 不以 / 开头,默认是从此类所在的包下获取资源,以 / 开头,则是从 classpath 路径下获取资源
 ```
+
+## 内部类
+
+```mermaid
+graph TB
+内部类-->静态内部类
+内部类-->非静态内部类
+非静态内部类-->成员内部类
+非静态内部类-->局部内部类
+非静态内部类-->匿名内部类
+```
+
+- 内部类作用
+    - 可以实现隐藏,非内部类不能使用 private,protected 修饰,但是内部类可以
+    - 内部类可以访问外部类的所有元素(private)
+
+###  成员内部类
+- ==*成员内部类里边不能有 static 修饰的变量和方法*==
+- 成员内部类里边不能有 static 修饰的变量和方法,但是==**可以创建常亮.就是有 static final 修饰的常量**==
+- 获取非静态内部类对象 : ==**外部类对象.new 内部类()**==
+- ==*定义成员内部类*==
+
+```java
+public class OutClass {
+    private String name;
+
+    //定义成员内部类
+    class MemberInnerClass{
+        static final String str = "1";
+        void say(){
+            System.out.println("this is member innerClass");
+        }
+    }
+}
+```
+
+- ==*创建成员内部类*==
+
+```java
+public class Test {
+    public static void main(String[] args) {
+        //创建成员内部类 外部类对象.new 成员内部类()
+        OutClass.MemberInnerClass memberInnerClass = new OutClass().new MemberInnerClass();
+        memberInnerClass.say();
+    }
+}
+```
+
+### 静态内部类
+- 静态内部类不能访问外部类的非静态成员.
+- 获取静态内部类对象 : ==**new 外部类.静态内部类()**==
+- ==*定义静态内部类*==
+
+    ```java
+    public class OutClass {
+        private String name;
+        //创建静态内部类
+        static class StaticInnerClass{
+            private String name;
+            void say(){
+                System.out.println("this is statci innerClass");
+            }
+        }
+    ```
+
+- ==*创建静态内部类对象*==
+
+    ```java
+    public class Test {
+        public static void main(String[] args) {
+            //获取静态内部类对象
+            OutClass.StaticInnerClass innerClass = new OutClass.StaticInnerClass();
+            innerClass.say();
+        }
+    }
+    ```
+
+- 局部内部类
+    - 在方法体内的内部类就是局部内部类,只有在方法的作用域下才能使用,退出作用于就无法引用
+    - 局部内部类可以访问外部类的所有成员,也可以访问方法的局部变量,这个变量必须是 final 的(java 1.8 以后可以不是 final 的了)
