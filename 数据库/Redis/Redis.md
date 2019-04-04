@@ -1,4 +1,5 @@
 # Redis
+涉及内容 : 布隆过滤器
 ## 1. 安装及启动
 ### 1.1. 安装
 1. 下载,解压
@@ -111,9 +112,10 @@ Jsonstring         json字符串
 
 ### hash
 -每个key对应的都是一个或多个键值对
+
 ### set
 - set时没有顺序的，中不能出现重复的元素。
-- 
+
 #### 使用场景:
 给用户添加标签
 给标签添加用户
@@ -343,13 +345,459 @@ slaveof IP port  : 设置要连接的主节点
 slave-read-only : 从节点只做读的操作.设置为 yes.
 ```
 
-## 6.Spring 整合 Redis
-
-
-
-
 -----
-## Linux 命令
+## 6. Redis Sentinel(哨兵)
+- 主从复制
+    - 从节点备份主节点
+    - 对主节点读写分流 : 大部分读放在从节点执行
+    - 存在的问题 :
+        - 如果主出现问题,需要手动进行故障处理,比如重新选一个 master 等
+        - 写能力只能写在一个节点,存储也只能在一点一点,因为其他起点只是和这个节点的一个副本
+- 如果主挂掉了,手工进行故障转移的方式 :
+    - 选中一个 slave,执行 slave no one ,就是让他成为一个主节点
+    - 让其他 slave new master.成为刚刚那个节点的从节点,这样也就进行了一次主从复制
+
+### 6.1 Redis Sentinel 基本架构概述
+- Redis sentinel 对主节点和从节点进行实时的监控
+- 有一个主节点和若干从节点,然后有若干个 sentinel 节点,这些sentinel 节点通过监控 Redis 节点,实现对 Redis 故障判断,故障转移,并通知客户端的功能.之所以有多个 sentinel 节点,是为了高可用,即使一个 sentinel 节点挂了,还可以保证 sentinel 的功能,并且保证判断节点失败的公平性
+- 对于客户端来说,不再直接记录 Redis 的 IP,而是记 Redis sentinel 的 IP.通过 Redis sentinel 可以保存 Redis 的地址.由 Redis sentinel 告诉客户端哪个是主节点,然后客户端对主节点进行操作
+- 主节点发生故障时
+    - 多个 Redis sentinel 发现并确定 master 有问题
+    - 选出一个 Redis sentinel 为领导
+    - 选出一个 slave 作为 master
+    - 通知其他 slave 成为新 master 的 slave
+    - 通知客户端主从关系的变化
+    - 出现故障的 master 重启后,会成为新的 master 的 slave
+
+### 6.2 Redis sentinel 安装与配置
+- 配置主节点
+- 配置从节点(有 slave mater-ip master-port 的配置)
+- 配置开启 sentinel 监控节点(就是特殊的 Redis 节点,这种节点不存储数据,只要是完成监控,故障转移和通知)
+
+- ==**主节点配置**==
+
+```properties
+port 7000
+daemonize yes
+pidfile /usr/local/redis/data/redis-7000.pid
+logfile "redis-7000.log"
+dir "/usr/local/redis/data/"
+```
+
+- ==**两个从节点配置**==
+
+```properties
+可以使用下面两条命令进行快速配置 7001 和 7002,此命令不是 Redis 的命令,是 Linux 的命令
+sed "s/7000/7001/g" redis-7000.conf > redis-7001.conf
+sed "s/7000/7001/g" redis-7000.conf > redis-7002.conf
+echo "slaveof 127.0.0.1 7000" >> redis-7001.conf
+echo "slaveof 127.0.0.1 7000" >> redis-7002.conf
+
+# 从节点 7001
+port 7001
+daemonize yes
+pidfile /usr/local/redis/data/redis-7001.pid
+logfile "redis-7001.log"
+dir "/usr/local/redis/data/"
+slaveof 127.0.0.1 7000
+
+#从节点 7002
+port 7002
+daemonize yes
+pidfile /usr/local/redis/data/redis-7002.pid
+logfile "redis-7002.log"
+dir "/usr/local/redis/data/"
+slaveof 127.0.0.1 7000
+```
+
+- ==**3个sentinel节点配置  sentinel.conf**==
+
+```properties
+可以使用一下命令查看 sentinel 的所有配置
+cat sentinel.conf | grep -v "#" |  grep -v "^$"
+
+# 以下是 sentinel 的配置
+port 26379
+daemonize yes
+pidfile /Users/cy/develop/opt/redis/pid/sentinel-26379.pid
+logfile "sentinel-26379.log"
+dir /Users/cy/develop/opt/redis/data/
+# 最后的 2 是设置的<法定人数>,在做客观下线额时候,如果有2个 sentinel 认为 master 有问题就说明可以确定 master 有问题
+sentinel mymaster 127.0.0.1 7000 2  
+# 每秒 sentinel 都会去 ping Redis,这里设置的意思是说如果30 秒还没有 ping 通,就做下线操作
+sentinel down-after-milliseconds mymaster 300000
+# 选择新的 master 之后,slave 要对新的 master 进行复制.这个复制是并发的还是串行的,配置 1 就是说一次只能复制一个,可以减轻服务器压力
+sentinel parallel-syncs mymaster 1 
+sentinel failover-timeout mymaster 180000   //故障转移时间
+
+分别配置另外两个 sentinel 26380  26381,只是端口名不一样,以及命名后缀不一样,其他都一样
+# sentinel 节点的启动命令为 : redis-sentinel sentinel配置文件
+sentinel 启动之后,sentinel 的配置文件会自动发生一些改变,会自动的发现监控的主节点的从节点
+
+# 查看状态
+redis-cli -p 26379 info sentinel
+```
+
+### 6.3 redis sentinel 分析
+sentinel 高可用是服务端的高可用
+客户端高可用:
+- 获取所有 sentinel 节点集合以及 对应的mastername,
+- 遍历 sentinel 集合,拿到可用的 sentinel 节点(就是可以 ping 通的节点)
+- 执行命令,返回 master 的地址和 端口
+- 获取到 master 节点后,验证是否是真的 master 节点(role 命令或者 role application)
+- 如果 master 发生了变化,sentinel 是能感知到的
+- 客户端和 sentinel 端 : 使用发布订阅模式,客户端订阅 sentinel的频道,当master 发生变化时,sentinel 会发送一条信息.订阅这个 sentinel 节点的客户端就可以收到这条消息.
+
+### 6.4 基于 Jedis 的 sentinel
+- JedisSentinelPool(mastername, sentinelSet, poolConfig, timeout) : 用于连接 Redis master 
+- JedisSentinelPool.getResource() 返回一个 Jedis
+- 使用完毕后需要归还资源 : jedis.close
+
+```java
+public static void main(String[] args) {
+        String mastername = "mymaster";
+        Set<String> sentinelSet = new HashSet<String>();
+        sentinelSet.add("127.0.0.1:26379");
+        sentinelSet.add("127.0.0.1:26380");
+        sentinelSet.add("127.0.0.1:26381");
+
+        JedisSentinelPool jedisSentinelPool = new JedisSentinelPool(mastername, sentinelSet);
+
+        Jedis jedis  = null;
+
+        int count = 0;
+        while (true){
+            count ++;
+            try {
+                jedis = jedisSentinelPool.getResource();
+                int index = new Random().nextInt(1000);
+                String key = "k-" +index;
+                String value = "v-" +index;
+                jedis.set(key, value);
+                if(count % 100 == 0){
+                    log.info("key : {} and value : {}", key, value);
+                }
+                TimeUnit.MILLISECONDS.sleep(10);
+            }catch (Exception e){
+                log.error(e.getMessage(), e);
+            }finally {
+                if (jedis != null){
+                    jedis.close();
+                }
+            }
+        }
+    }
+```
+- 使用命令 redis-cli -p 26379 info sentinel 查看当前监控的 master
+- 此时kill 掉 master
+- 等待一段时间,再使用命令查看  redis-cli -p 26379 info sentinel 查看 sentinel 节点信息,可以看到 master 已被换掉.
+
+### 6.5 故障转移原理 
+#### 6.5.1 三个定时任务
+- 为了实现 Redis sentinel 对 Redis 节点失败鉴定,故障转移的功能,在 sentinel 内部有三个定时任务来作为实现以上功能的基础
+- 每 10 秒查看 master 和 Redis 的信息.每 2 秒获取其他 sentinel 节点的信息以及他们对节点的看法.每一秒查看对其他 sentinel 节点和 Redis 节点的连通性.info,chennel,ping
+- ==*每 10 秒 每个 Sentinel 节点对master 和 slave 执行 info*==
+    - 可以可以发现 slave 节点
+    - 确定主从关系
+- ==*每 2 秒每个 sentinel 通过 master 节点的 channel交换信息*==
+    - 频道名称为 : ==*_sentinel_:hello*==
+    - 每 2 秒钟,sentinel 都会通过master 节点的此频道发送信息,其他的 sentinel 可以收到此信息,发送消息的 sentinel 也可以收到其他 sentinel 节点发送的消息
+    - ==*交换自身的信息和对 Redis 节点的看法*==
+
+- ==*每 1 秒,每个sentinel 都会对其他的 sentinel 节点和 Redis 进行 ping 的操作*==
+
+
+
+#### 6.5.2 ==*主观下线*==和==*客观下线*==
+主观下线(+sdown) : 每个 sentinel 节点对 Redis 节点失败的偏见.
+客观下线(+odown) : 所有 sentinel 节点对 Redis 节点失败达成共识超过设置的 quorum 个统一.
+    - 每 2 秒 sentinel 会互通信息,这样达成共识.
+
+#### 6.5.3 领导者选举
+- 领导者选举就是==* 从 sentinel 集合中,选举出一个节点来做故障转移*==
+- 为什么要选举 : 当所有 sentinel 节点对 master 发生故障达成意见统一之后,会选出一个 leader.因为==*只需要一个 sentinel 来完成故障转移*==.
+- 命令 : sentinel is-master-down-by-addr 作用: 
+    - 交换对master 的失败判定.
+    - 用来完成领导者选举
+- 每个做完主观下线的 sentinel 节点向其他 sentinel 节点发送命令,要求将它设置为领导者
+- 收到命令的 sentinel 节点这时候如果还没有同意其他人,那么它就会同意该请求,否则就拒绝
+- 如果该 sentinel 节点发现自己的票数已经超过 sentinel 集合半数或者超过 quorum,那么它就成为领导者
+
+
+#### 6.5.4 故障转移
+- kill master 后,sentinel 的日志
+
+    ```properties
+    4518:X 03 Apr 2019 14:24:58.516 # +sdown master mymaster 127.0.0.1 7001
+    4518:X 03 Apr 2019 14:24:58.572 # +odown master mymaster 127.0.0.1 7001 #quorum 3/2
+    4518:X 03 Apr 2019 14:24:58.573 # +new-epoch 4
+    4518:X 03 Apr 2019 14:24:58.575 # +try-failover master mymaster 127.0.0.1 7001
+    4518:X 03 Apr 2019 14:24:58.576 # +vote-for-leader 2839076ec7f4a64d8e37ddff03efc41414d0618a 4
+    4518:X 03 Apr 2019 14:24:58.578 # d582a921a29e79a397c1d3a56b27bd61166ca2cf voted for 2839076ec7f4a64d8e37ddff03efc41414d0618a 4
+    4518:X 03 Apr 2019 14:24:58.579 # 756c440ea32006a81a97d2e378b25cb8493cef73 voted for 2839076ec7f4a64d8e37ddff03efc41414d0618a 4
+    4518:X 03 Apr 2019 14:24:58.632 # +elected-leader master mymaster 127.0.0.1 7001
+    4518:X 03 Apr 2019 14:24:58.632 # +failover-state-select-slave master mymaster 127.0.0.1 7001
+    4518:X 03 Apr 2019 14:24:58.717 # +selected-slave slave 127.0.0.1:7000 127.0.0.1 7000 @ mymaster 127.0.0.1 7001
+    4518:X 03 Apr 2019 14:24:58.717 * +failover-state-send-slaveof-noone slave 127.0.0.1:7000 127.0.0.1 7000 @ mymaster 127.0.0.1 7001
+    4518:X 03 Apr 2019 14:24:58.787 * +failover-state-wait-promotion slave 127.0.0.1:7000 127.0.0.1 7000 @ mymaster 127.0.0.1 7001
+    4518:X 03 Apr 2019 14:24:59.402 # +promoted-slave slave 127.0.0.1:7000 127.0.0.1 7000 @ mymaster 127.0.0.1 7001
+    4518:X 03 Apr 2019 14:24:59.402 # +failover-state-reconf-slaves master mymaster 127.0.0.1 7001
+    4518:X 03 Apr 2019 14:24:59.478 * +slave-reconf-sent slave 127.0.0.1:7002 127.0.0.1 7002 @ mymaster 127.0.0.1 7001
+    4518:X 03 Apr 2019 14:24:59.678 # -odown master mymaster 127.0.0.1 7001
+    4518:X 03 Apr 2019 14:25:00.439 * +slave-reconf-inprog slave 127.0.0.1:7002 127.0.0.1 7002 @ mymaster 127.0.0.1 7001
+    4518:X 03 Apr 2019 14:25:00.439 * +slave-reconf-done slave 127.0.0.1:7002 127.0.0.1 7002 @ mymaster 127.0.0.1 7001
+    4518:X 03 Apr 2019 14:25:00.499 # +failover-end master mymaster 127.0.0.1 7001
+    4518:X 03 Apr 2019 14:25:00.499 # +switch-master mymaster 127.0.0.1 7001 127.0.0.1 7000
+    4518:X 03 Apr 2019 14:25:00.501 * +slave slave 127.0.0.1:7002 127.0.0.1 7002 @ mymaster 127.0.0.1 7000
+    4518:X 03 Apr 2019 14:25:00.502 * +slave slave 127.0.0.1:7001 127.0.0.1 7001 @ mymaster 127.0.0.1 7000
+    4518:X 03 Apr 2019 14:25:30.520 # +sdown slave 127.0.0.1:7001 127.0.0.1 7001 @ mymaster 127.0.0.1 7000
+    ```
+- +switch-master : 切换主节点(从节点晋升为主节点)
+- +convert-to-slave : 切换从节点(主节点降为从节点)
+    
+- 会进行一个少数服从多数的判断,确定 master 出现了问题
+- sentinel 节点如果有多台,他们自己会选举一台作为领导
+- 选择一台合适的 slave ,执行 slave no one 命令.将这个 slave 作为新的 master
+
+```properties
+合适的 : 
+    首先选择 slave-priority(slave 优先级别)最高的 slave 节点,如果存在则返回,如果不存在则继续(比如可以手动设置更高的级别,可以根据意愿去选择某个 slave 作为 master)
+    选择复制偏移量最大的 slave 节点(复制的最完整),如果存在则返回.不存在则继续
+    选择 runId 最小的 slave 节点
+```
+- 向剩余的 slave 节点发送命令.让他们成为新的 master 节点的 slave.==*复制规则和 parallel-sync 参数*==有关.
+- 对原来的 master 节点设置为 slave,并保持对其的关注,当其恢复后命令它去复制新的 master 节点.
+
+### 6.7 高可用读写分离
+其中一种思想 : 
+- 所有的 slave 节点都存在于一个 slave 节点资源池中
+- 客户端连接这个 slave 节点资源池
+- 池子里的节点发生了变化(slave 晋升为主节点或者主节点降为 slave)
+- 客户端需要考虑到池子的变化
+
+
+## 7. Redis Cluster
+### 7.1 集群概述以及为什么要使用集群
+- 并发量 : 特定业务场景下,单机的 QPS 满足不了需求.
+- 数据量 : 特定场景下,单机机器内存满足不了场景需求.
+- 网络流量 : 需求的流量查过了网卡的流量.
+
+### 7.2 哈希分区
+#### 7.2.1 数据分布概述
+- 数据分布 : 全量数据,单机满足不了这个数据量需求,所以需要按照一定的规则,将全量数据分区到若干个分区
+
+```mermaid
+graph TB;
+全量数据-->分区规则
+分区规则-->子集1
+分区规则-->子集2
+分区规则-->...
+分区规则-->子集n
+```
+
+#### 7.2.2 分区规则
+##### 7.2.2.1 顺序分区
+- 顺序分区 : 将全量数据按照顺序, 均衡的分布到每一个子集中
+- 顺序分区特点 :
+    - 数据分布均匀,但是数据分散度易倾斜
+    - 键值分布与业务相关
+    - 支持顺序访问
+    - 支持批量操作
+- 假如现有 100 份数据
+
+```mermaid
+graph TB
+1-100-->1-33
+1-100-->34-66
+1-100-->67-100
+```
+
+##### 7.2.2.2 哈希分区
+- 哈希分区 : 对数据做一个 hash 函数,然后再分区
+- 哈希分区可分为 : 
+    - 节点取余分区
+    - 一致性哈希分区
+    - 虚拟槽分区
+- 哈希分区特点 :
+    - 数据分散度高
+    - 键值分布与业务无关
+    - 不支持顺序访问
+    - 支持批量操作
+
+#### 7.2.3 哈希分区之 : ==*节点取余分区*==
+- 使用 key%数据节点数 ,取余,余数为几,就在第几个分区
+-  hash(key)%nodes
+
+- ==**3 个数据节点**==
+
+    ```mermaid
+    graph TB
+    1-100 --> 1到100分别除以节点数3,并取余,得到的余数就是此数据被分区到的节点
+    1到100分别除以节点数3,并取余,得到的余数就是此数据被分区到的节点 --> 3,6,9...99
+    1到100分别除以节点数3,并取余,得到的余数就是此数据被分区到的节点 --> 1,4,7...100
+    1到100分别除以节点数3,并取余,得到的余数就是此数据被分区到的节点 --> 2,5,8..98
+    ```
+
+- ==**4 个数据节点**==
+
+ ```mermaid
+    graph TB
+    1-100 --> 1到100分别除以节点数4,并取余,得到的余数就是此数据被分区到的节点
+    1到100分别除以节点数4,并取余,得到的余数就是此数据被分区到的节点 --> 4,8,12...100
+    1到100分别除以节点数4,并取余,得到的余数就是此数据被分区到的节点 --> 1,5,9...97
+    1到100分别除以节点数4,并取余,得到的余数就是此数据被分区到的节点 --> 2,6,10..98
+    1到100分别除以节点数4,并取余,得到的余数就是此数据被分区到的节点 --> 3,7,11..99
+    ```
+
+- 节点取余分区扩容 :
+    - 随着需求的增加,比如数据量增加等,需要对节点进行扩容(增加节点数)
+    - 节点数增加了,那么节点内的数据就会发生变化,因为目前的分区是通过取余进行的分区
+    - 如果增加一个节点,那么数据迁徙率达到 80%,这样对系统性能等会有影响,因为==*数据迁移后,第一次是无法从缓存中获取的,需要从数据库获取,所以大量的缓存重写是不正常的*==
+    - 推荐==*翻倍扩容*==,每次扩容节点数增加一倍,数据迁徙率大概 50%左右
+
+#### 7.3 哈希分区之 : 一致性哈希分区
+- 一致性哈希分区 : 
+    - 假如有一个 token 环(就是一个圆圈),代表一个数据范围,值是 0~2的 32 次方
+    - 为每一个 node 分配一个token,这个 token 在token 环的范围内(就是圆圈的边上的一个点),此时相邻的两个节点之间就是一个数据范围
+    - 此时有一个key,进行 hash 计算后得到一个哈希值,在token 环上找到对应值的点,这个点处于连个 node 之间,比如 node1 和 node2,然后会==*顺时针*==的被分配到相邻的 node 上,加入node2 是顺时针方向的那个节点,那么这个 key 就会被分配到 node2 节点上.
+    - 所以==*一致性哈希分区*==在增加节点的时候只会影响相邻的两个节点
+
+
+
+### 7.3 搭建集群
+### 7.4 集群伸缩
+### 7.5 客户端路由
+### 7.6 集群原理
+
+
+## 8. 缓存
+- 使用缓存的收益 : 
+    - 读写速度. 通过缓存加速读写速度
+    - 降低后端负载. 通过缓存可以将大部分流量打到缓存上,而不是打到 MySQL 上.可以降低 MySQL 的负载
+
+- 使用缓存的成本 :
+    - 数据不一致. 缓存层和数据层有时间窗口不一样,和更新策略有关.
+    - 代码维护成本变高. 因为多了一层缓存的读写
+    - 运维成本. 比如需要增加一套 Redis cluster
+
+- ==*使用缓存的场景*== : 
+    - 降低后端负载. 比如 MySQL
+    - 加速响应时间
+    - 大量写合并为批量写. 比如计数器先 Redis累加再批量写 DB
+
+### 8.1 缓存更新策略
+缓存更新策略 : 缓存的数据通常都是有生命周期,需要定期做更新,删除等操作或者合理的时间进行更新,来保持数据的正确性以及保证存储空间.
+
+1. ==**LRU/LFU/FIFO 算法剔除**==
+        - 例如 : maxmemoory-policy 策略, 达到最大内存的时候,就淘汰一部分数据.
+        - ==*数据一致性最差,但是维护成本最低*==
+2. 超时剔除 : 
+        - 例如 ==*expire*==, 就是设置一个过期时间,在这个时间内,操作这个数据都是去缓存中访问
+        - ==*数据一致性较差,但是维护成本较低*==
+3. 主动更新 : 开发控制声明周期
+        - ==*数据一致性最高,但是维护成本最高*==
+
+==**策略选择的建议**==
+- 对数据一致性要求低 : 选择最大内存和淘汰策略
+- 高一致性 : 超时剔除和主动更新结合, 最大内存和淘汰策略兜底
+
+### 8.2 缓存粒度问题
+- 通用性 : 全量属性最好
+    - 比如以后要添加新的字段,
+- 占用空间 : 部分属性更好
+- 代码维护 : 表面上全量属性更好
+
+### 8.3 ==**缓存穿透**==问题
+缓存穿透 : 请求并不存在的数据,由于缓存中没有,这些请求都落到数据库上
+==**解决**== :
+- ==*缓存空对象*== : 
+    - 假如数据不存在,从数据库返回的时候,向数据库缓存个空对象,并设置一个过期时间.  
+- ==*[布隆过滤器](#bulong)*==
+
+### 8.4 缓存雪崩
+缓存雪崩 : 正常情况下缓存承载着大量的请求,如果缓存因为一些问题发生突然宕机等情况,这些大量的请求就都到了 DB,会对 DB 造成巨量的压力,甚至宕掉.
+
+==**优化方案**==
+- ==*保证Cache的高可用*== 
+    - 比如: Redis cluster, Redis sentinel,VIP 等
+- ==*依赖隔离组件为后端限流*==
+    - Hystrix 提供的隔离功能
+- ==*提前演练*==
+    - 比如压力测试等
+
+### 8.5 Cache 无底洞问题 
+- 增加机器,性能反而下降
+- 一台机器,执行一次 mget 需要一次网络通信时间,随着机器的增多,网络通信时间也会随之增多,网络时间多就会对性能造成影响
+- 也就是说无底洞主要是==**IO**==
+
+==*优化 IO 的几种方法*==
+- 命令本身优化
+- 减少网络通信次数
+- 降低客户端接入成本
+
+| 方案 | 优点 | 缺点 | 网络 IO |
+| --- | --- | --- | --- |
+| 串行 mget | 编程简单,少量 keys 满足需求 | 大量 keys请求延迟严重 | O(keys) |
+| 串行 IO | 编程简单,少量 keys 满足需求 | 大量 node延迟严重 | O(nodes) |
+| 并行 IO | 利用并行特性,延迟取决于最慢的节点 | 编程复杂,超市问题定位困难 | O(max_low(node)) |
+| hash_tag | 性能最高 | 读写增加tag 维护成本,tag 数据分布易出现数据倾斜 | O(1) |
+
+### 8.6 热点 key 的重建优化
+- 请求一个热门数据数据,首先从缓存获取,如果缓存中没有,就从 DB 中获取,然后存入缓存中
+- 在高并发场景中,有大量线程都访问这个数据,第一个线程访问时,发现Cache 中没有这个数据,就去 DB 查找, 然后进行 Cache 重建,然后输出.
+- 第二个线程在 Cache 重建之前也到了查找 Cache 的过程,这时发现没有,他就也走Cache 重建的过程
+- 然后好多线程都在第一个线程重建完之前查找 Cache,这样就会出现问题
+- 以上就是热点 key 重建问题
+| 方案 | 优点 | 缺点 |
+| --- | --- | --- |
+| 互斥锁 | 思路简单,保证数据一致性 | 代码复杂性增加. 存在死锁的风险 |
+| 永不过期 | 基本杜绝热点 key 重建问题 | 不保证数据一致性. 逻辑时间增加维护成本和内存成本 |
+
+
+==**上述过程优化方案**==
+1. 做到三个目标
+    - 减少重建缓存次数
+    - 数据尽可能一直
+    - 减少潜在危险
+2. 两种解决方案
+- ==**互斥锁**==
+    - 当第一个线程运行到获取 Cache 时,开始重建 Cache 时,添加一个锁 lock,重建完毕后释放锁 unlock,并输出结果
+    - 这样其他线程运行到获取 Cache 的时候,必须要等待第一个线程执释放锁之后才能继续执行
+    - 第一线程释放锁之后,这是缓存中已经有这个数据了,其他线程就可以直接输出.
+    - 互斥锁会出现一些问题,比如这个等待的过程
+
+- ==**key 永不过期**==
+    - 缓存层面 : 不设置过期时间(没有使用 expire)
+    - 功能层面 : 为每个 value 设置 ==*逻辑过期时间*==, 当发现超过逻辑过期时间后,使用单独的线程去重建缓存.
+    - 相较于 ==*互斥锁*== 的方案,不会有等待的时间,但是会存在数据不一致的情况.就是超过逻辑时间后,在重建缓存完成之前,得到的还是老的值
+
+
+
+## 9. Redis 布隆过滤器<span id="bulong"/>
+- 看个问题: 有 50 亿个电话号码,现有 10 万个电话号码,快速判断出这10 万个电话号是否在 50 亿个电话号码中
+    - 
+### 9.1 布隆过滤器原理
+- 布隆过滤器可用很小的空间,在可控的误差范围内解决上述问题.
+- 本质上布隆过滤器是一种数据结构，比较巧妙的概率型数据结构（probabilistic data structure），特点是高效地插入和查询，可以用来告诉你 “某样东西一定不存在或者可能存在”。
+- 原理 : 
+    - 一个很长的二进制向量(这个二进制很长,可能有几亿位,都是 0)和若干个哈希函数
+    - 将要查询的值,例如"baidu",通过若干个hash 函数(假如 3 个)计算出哈希值,假如计算出的哈希值为 3, 5, 7
+    - 那么就分别将二进制向量的第 3 位,第 5 位,第 7 位设置成 1,然后这个三个位置都为 1,就标识"baidu"存在
+
+### 9.2 布隆过滤器构建
+- 参数 : m 个二进制向量, n 个预备数据(就是要查询是否存在其中的数据,比如上边的 50 亿个电话号码), k 个哈希函数
+- 构建布隆过滤器 : n 个数组走一边上边的流程,将数据都存入到过滤器中.
+
+
+
+### 作用 : 
+- 解决缓存穿透问题
+
+
+## 使用场景
+
+## 用户手册
+### Linux 命令
 
 ```properties
 String 基本命令 : 
@@ -467,26 +915,9 @@ set 命令 :
     ping : 可判断是否连接成功,如果返回 pong,则说明连接成功
 ```
 
-## 配置
-
-```conf
-
-```
-
-## 熔断机制
-
-## 分布式锁
-- 分布式环境中,多个应用对统一资源进行访问,对这统一资源来说,就要一个锁(==*Redis 的临时节点,多个应用中对同一个资源的锁应该是同一个节点*==)保证资源的同步,只有当这个应用持有这个锁的时候才能操作此资源,否则就要等待其他应用释放这个锁之后才能对此资源进行访问.
-- 在一个应用中,对此资源进行访问钱,要先判断其他资源是否占有锁(==*就是判断这个临时节点是否存在*==).如果不存在,说明没有应用持有锁,就创建一个这个锁的临时节点,然后就可以操作这个资源,如果存在,就说明有其他资源占用了锁,就等待
-- 操作完以后,释放锁(删除此临时节点)
 
 
-## 使用场景
-
-
-## 面试相关
-- 穿透查询 : 就是缓存没有响应数据,去数据库查询.
-- 熔断 : 
-- 为什么 Redis 快
-    - 完全基于内存,绝大部分操作都是纯粹的内存操作,执行效率高,单线程模型
-    - 数据结构简单,对数据操作也简单,不使用表  
+    
+## 涉及到的其他技术
+- Hystrix : 隔离
+- VIP
