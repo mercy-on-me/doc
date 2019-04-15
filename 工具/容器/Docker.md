@@ -95,8 +95,38 @@ docker-machine ssh demo : 进入到名称为 demo 的 docker-machine
 
 ## 用户手册
 ### 命令
+- docker 命令 : ==*docker +命令关键字command +一系列参数*==
+- 如果不知道某个 command的作用,可以使用 ==* docker command --help*== 查看帮助文档
 
 ```properties
 docker version
-docker image ls : 查看已安装的 image
+docker image ls / docker images : 查看已安装的 image
+
+docker ps 
+docker search xxx : 查找 image
+docker pull xxx : 下载镜像
+
+容器 : 
+docker run : 创建和启动 container
+    例如 : docker run -d -p 80:80 httpd
+    指定名称 : docker run --name 指定名称 -d -p 80:80 httpd
+    
+docker container ls / docker ps: 查看运行的容器
+    比如 ID 等,ID 默认 128 位,此命令查询出的是 16 位的简略 ID,要查看完整的加上 --no-trunc
+
+docker inspect 容器 ID : 查看容器信息
+    可使用 docker run 指定的名称代替 ID
+    查看指定信息 : docker inspect -f {{.NetworkSettings.IPAddress}} 名称/ID
+
+docker ps -a | grep container_id : 查看容器状态   
+    Up什么什么的 : 说明运行中. 
+    Exited : 说明停止
+    
+docker stop container_id : 停止容器
+
+docker start container_id : 启动容器
+    也可以使用在 docker run 时设置的名称代替 ID
+    
+docker logs 名称/ID : 查看日志
+
 ```

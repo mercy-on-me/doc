@@ -214,7 +214,9 @@ ${user.age}
         defaultValue : 默认值.标识请求中没有同名参数时的默认值.
     使用方法 : public String run(@RequestParam(value="id", required=true, defaultValue="123")){}
 
-@ModelAttribute : 通常标注在 Controller 内的某个方法上.不需要指定 URL,在这个 Controller 的其他方法被调用前,都会先调用被这个注解标注的方法.并可以使用注解 @PathVariable 获取 URL 上的参数.可以在这个方法中向 model 中添加一个参数,比如关于客户的操作,一般都要获取客户信息,这里个方法就可以获取客户信息,然后添加到 model 中,如果只添加一个对象.则可以直接 return userService.getUser(id),不用 model.addAttribute.
+@ModelAttribute : 
+    标注在 Controller 内的某个方法上 : 不需要指定 URL,在这个 Controller 的其他方法被调用前,都会先调用被这个注解标注的方法.并可以使用注解 @PathVariable 获取 URL 上的参数.可以在这个方法中向 model 中添加一个参数,比如关于客户的操作,一般都要获取客户信息,这里个方法就可以获取客户信息,然后添加到 model 中,如果只添加一个对象.则可以直接 return userService.getUser(id),不用 model.addAttribute.
+    标注在 Controller 内的某个方法的参数列表中 : 运用在参数上，会将客户端传递过来的参数按名称注入到指定对象中，并且会将这个对象自动加入ModelMap中，便于View层使用；
 
 @Valid : 标注在方法参数上,可以进行校验
 

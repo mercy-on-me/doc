@@ -7,12 +7,12 @@
 
 
 
-## 急速入门
+## 1. 急速入门
 - 编写核心配置文件
 - 编写 POJO,Dao,Mapper 文件
 
 
-## mapper 文件编写
+### 1.1 mapper 文件编写
 
 ### resultMap
 
@@ -166,3 +166,8 @@ private void propertiesElement(XNode context) throws Exception {
 - properties 标签不能同时配置 resource 和 URL,并且 properties 下的 property 标签会覆盖 resource 和 URL.
 
 ### 2. 解析 typeAliases配置 (别名)
+
+
+
+## Spring 整合 mybatis
+### 1. 
