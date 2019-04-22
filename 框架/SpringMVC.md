@@ -49,6 +49,8 @@ Handler 执行完毕后向处理器适配器返回 ModelAndView
 
 @PathVariable : 标注在方法参数列表中,用于接收请求 URL 中的参数,和 @RequestMapping 一起使用
     使用方法: 
+        url : localhost:8080/test/4
+        @RequestMapping("/test/{id}")
         public String run(@PathVariable() Integer id) : 默认将请求URL 中的请求参数 ID 绑定到参数 id 中(名称相同)
         public String run(@PathVariable("id") Integer id1) 默认将请求URL 中的请求参数 ID 绑定到参数 id1 中(名称不相同)
 
@@ -57,7 +59,10 @@ Handler 执行完毕后向处理器适配器返回 ModelAndView
         value : 请求参数名.就是请求 URL 中有参数传入
         required : 这个参数是否必须.false:不必须,true:必须.如果为 true,而请求又没有这个参数,则会报错
         defaultValue : 默认值.标识请求中没有同名参数时的默认值.
-    使用方法 : public String run(@RequestParam(value="id", required=true, defaultValue="123")){}
+         使用方法 : 
+            url : localhost:8080/test?id=4
+            @RequestMapping("/test")
+            public String run(@RequestParam(value="id", required=true, defaultValue="123")){}
 
 @RequestBody : 作用在方法上.用于接收 POST 请求的JSON 数据,转成 java 对象
 @ResponseBody : 标注在方法上,返回文本给浏览器
