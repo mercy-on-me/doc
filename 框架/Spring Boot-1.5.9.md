@@ -13,6 +13,7 @@
 ==**代码实现**==
 
 ==主程序==
+
 ```java
 /**
  *  @SpringBootApplication : 说明这是一个 SpringBoot 注解
@@ -619,6 +620,7 @@ public class MyServerConfig {
 ### 3. 自动配置
 #### 3.1. 了解自动配置原理前需要知道的
 -  ==**导入组件**==
+    
     ```java
         // [ 1 ] 主程序
         @SpringBootApplication
@@ -694,8 +696,10 @@ public class MyServerConfig {
         		}
         	}
         }
-        ```
-        ==说明==
+    
+    ```
+    
+        ==**说明**==
             - 根据注解 : ==**@SpringBootApplication**== 上的注解 : ==**@EnableAutoConfiguration**== 上的注解 : ==**@AutoConfigurationPackage**== 上的注解 : ==**@Import(AutoCOnfigurationPackages.Registra.class)**== 内的方法 : ==**Registra**== 可以导入主程序所在的包及下面所有子包的组件到 Spring 容器.
         
 - ==**导入组件选择器**==
