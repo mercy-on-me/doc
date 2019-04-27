@@ -44,7 +44,8 @@ Handler 执行完毕后向处理器适配器返回 ModelAndView
             method=RequestMethod.POST : POST 请求
             method={}
         consumers : 指定媒体类型.HTTP 头的 Content-Type 的值要和 consumers 指定的一样才匹配.
-        produces : 对应 HTTP 请求的 Accept 字段.只有相同才能匹配.通常浏览器都会讲 Accept 设置为 *.*,所以访问浏览器/user/1,浏览器总是会返回 1 对应的数据
+        produces : 对应 HTTP 请求的 Accept 字段.只有相同才能匹配.通常浏览器都会讲 Accept 设置为 *.*,所以访问浏览器/user/1,浏览器总是会返回 1 对应的数据,
+            此属性可设置 response 的 Content-Type,就是编码和格式,比如: produces=MediaType.APPLICATION_JSON_VALUE+";charset=utf-8" : 返回 utf8的 json,中文什么的也不会乱码
     
 
 @PathVariable : 标注在方法参数列表中,用于接收请求 URL 中的参数,和 @RequestMapping 一起使用
